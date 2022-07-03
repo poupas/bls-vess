@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math/big"
 
+	// TODO: remove dependency on gnark. Herumi's bls is enough
 	gnark "github.com/consensys/gnark-crypto/ecc/bls12-381"
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
 
@@ -64,7 +65,7 @@ func Test() {
 	adjSKey := fr.Element{}
 	adjSKey.SetRandom()
 	adjSKeyInt := big.Int{}
-	adjSKey.ToBigInt(&adjSKeyInt)
+	adjSKey.ToBigIntRegular(&adjSKeyInt)
 	adjPKeyG1 := gnark.G1Affine{}
 	// Regular public key on G1
 	adjPKeyG1.ScalarMultiplication(&g1, &adjSKeyInt)
@@ -109,6 +110,10 @@ func Test() {
 	omega.Add(&sigma, &sigma_2)
 
 	fmt.Printf("VESig: (%x, %x)\n", omega.Marshal(), mu.Marshal())
+	origOmega := bls.G2{}
+	origOmega.DeserializeUncompressed(omega.Marshal())
+	origMu := bls.G2{}
+	origMu.DeserializeUncompressed(mu.Marshal())
 
 	// Verify
 	// TODO: there are probably more efficient ways to do this check.
@@ -151,4 +156,64 @@ func Test() {
 		panic("Recovered signature does not match original signature")
 	}
 	fmt.Println("Recovered signature matches!")
+
+	// Try do recover the original signature, but with threshold signatures (n-of-m scheme)
+	minShares := 3
+	totalShares := 10
+
+	// Create a polynomial for the "threshold adjudicator" private key with degree n-1
+	// This will require n shares out of m to reconstruct the key (n-of-m)
+	adjKeyPoly := make([]bls.Fr, minShares)
+	adjsk := bls.Fr{}
+	adjsk.Deserialize(adjSKey.Marshal())
+
+	// The free coefficient is the original private key
+	adjKeyPoly[0] = adjsk
+
+	// Random secret key coefficients
+	for i := 1; i < minShares; i++ {
+		fr := bls.Fr{}
+		fr.SetByCSPRNG()
+		adjKeyPoly[i] = fr
+	}
+
+	// Evaluate the polynomial at m points (the key shares)
+	// Note that we're creating the shares from a single private key
+	// In a real setting, a DKG protocol would probably be used
+	shares := make([]bls.Fr, totalShares)
+	for i := 0; i < len(shares); i++ {
+		x := bls.Fr{}
+		x.SetInt64(int64(i + 1))
+		y := bls.Fr{}
+		bls.FrEvaluatePolynomial(&y, adjKeyPoly, &x)
+		shares[i] = y
+	}
+
+	// At this point, each member would already have its key share
+
+	// Try to calculate mu^adjKey, using n shares
+	// We're just using the first n, but it can be any n valid shares
+	mub := bls.G2{}
+	mub.Deserialize(origMu.Serialize())
+	res := make([]bls.G2, minShares)
+	for i := 0; i < len(res); i++ {
+		bls.G2Mul(&res[i], &mub, &shares[i])
+	}
+
+	// Lagrange interpolation with n points to recover mu^adjKey
+	xs := make([]bls.Fr, minShares)
+	for i := 0; i < len(xs); i++ {
+		xs[i] = bls.Fr{}
+		xs[i].SetInt64(int64(i + 1))
+	}
+	err := bls.G2LagrangeInterpolation(&mub, xs, res)
+	if err != nil {
+		panic(err)
+	}
+
+	// Final adjudication step
+	omegab := bls.G2{}
+	omegab.DeserializeUncompressed(origOmega.SerializeUncompressed())
+	bls.G2Sub(&omegab, &omegab, &mub)
+	fmt.Printf("Recovered signature (n-of-m): %x\n", omegab.SerializeUncompressed())
 }
