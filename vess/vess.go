@@ -157,7 +157,7 @@ func Test() {
 	}
 	fmt.Println("Recovered signature matches!")
 
-	// Try do recover the original signature, but with threshold signatures (n-of-m scheme)
+	// Try do recover the original signature, but with split keys (n-of-m scheme)
 	minShares := 3
 	totalShares := 10
 
