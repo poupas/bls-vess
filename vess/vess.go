@@ -19,34 +19,32 @@ import (
 	"github.com/herumi/bls-eth-go-binary/bls"
 )
 
-var g1 gnark.G1Affine
-var g2 gnark.G2Affine
+type VESS struct {
+	g1 gnark.G1Affine
+	g2 gnark.G2Affine
+}
 
-func Init() {
+func New() (*VESS, error) {
 	if err := bls.Init(bls.BLS12_381); err != nil {
-		panic(err)
+		return nil, err
 	}
 	if err := bls.SetETHmode(bls.EthModeDraft07); err != nil {
-		panic(err)
+		return nil, err
 	}
 	bls.VerifyPublicKeyOrder(true)
 	bls.VerifySignatureOrder(true)
 
 	// Fetch G1 and G2 generators (affine coordinates)
 	_, _, g1, g2 = gnark.Generators()
+
+	return &VESS{g1: g1, g2: g2}, nil
 }
 
-func Sign() {
+func (v *VESS) Sign() {}
 
-}
+func (v *VESS) Verify() {}
 
-func Verify() {
-
-}
-
-func Adjudicate() {
-
-}
+func (v *VESS) Adjudicate() {}
 
 func Test() {
 	// Alice's keys
