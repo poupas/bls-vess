@@ -35,7 +35,7 @@ func New() (*VESS, error) {
 	bls.VerifySignatureOrder(true)
 
 	// Fetch G1 and G2 generators (affine coordinates)
-	_, _, g1, g2 = gnark.Generators()
+	_, _, g1, g2 := gnark.Generators()
 
 	return &VESS{g1: g1, g2: g2}, nil
 }
@@ -46,7 +46,12 @@ func (v *VESS) Verify() {}
 
 func (v *VESS) Adjudicate() {}
 
-func Test() {
+func Test() error {
+	v, err := New()
+	if err != nil {
+		return err
+	}
+
 	// Alice's keys
 	// Secret (private) key
 	aSKey := fr.Element{}
@@ -54,7 +59,7 @@ func Test() {
 	// Public key
 	aPKey := gnark.G1Affine{}
 	x := big.Int{}
-	aPKey.ScalarMultiplication(&g1, aSKey.ToBigInt(&x))
+	aPKey.ScalarMultiplication(&v.g1, aSKey.ToBigInt(&x))
 
 	fmt.Printf("Alice's pubkey (G1): %x\n", aPKey.Marshal())
 
@@ -66,10 +71,10 @@ func Test() {
 	adjSKey.ToBigIntRegular(&adjSKeyInt)
 	adjPKeyG1 := gnark.G1Affine{}
 	// Regular public key on G1
-	adjPKeyG1.ScalarMultiplication(&g1, &adjSKeyInt)
+	adjPKeyG1.ScalarMultiplication(&v.g1, &adjSKeyInt)
 	// Public key on G2. Required for Type 3 pairings
 	adjPKeyG2 := gnark.G2Affine{}
-	adjPKeyG2.ScalarMultiplication(&g2, &adjSKeyInt)
+	adjPKeyG2.ScalarMultiplication(&v.g2, &adjSKeyInt)
 
 	fmt.Printf("Adjudicator pubkey (G1): %x\nAdjudicator pubkey (G2): %x\n",
 		adjPKeyG1.Marshal(), adjPKeyG2.Marshal())
@@ -95,7 +100,7 @@ func Test() {
 	// Note the ETH2 spec swaps the G1 and G2 groups to get smaller public keys
 	// Also note that phi(g2) == g1
 	mu := gnark.G2Affine{}
-	mu.ScalarMultiplication(&g2, &r)
+	mu.ScalarMultiplication(&v.g2, &r)
 
 	// Set sigma_2 = phi(v')^r
 	// Reminder: phi(v') is is the adjudicator pubkey on G2
@@ -122,7 +127,7 @@ func Test() {
 	// Friendly reminder that ETH2 swaps G1 and G2
 
 	// e(omega, g2)
-	pair0, _ := gnark.Pair([]gnark.G1Affine{g1}, []gnark.G2Affine{omega})
+	pair0, _ := gnark.Pair([]gnark.G1Affine{v.g1}, []gnark.G2Affine{omega})
 
 	// h = H(M)
 	h0 := bls.HashAndMapToSignature([]byte(msg))
@@ -204,9 +209,9 @@ func Test() {
 		xs[i] = bls.Fr{}
 		xs[i].SetInt64(int64(i + 1))
 	}
-	err := bls.G2LagrangeInterpolation(&mub, xs, res)
+	err = bls.G2LagrangeInterpolation(&mub, xs, res)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	// Final adjudication step
@@ -214,4 +219,6 @@ func Test() {
 	omegab.DeserializeUncompressed(origOmega.SerializeUncompressed())
 	bls.G2Sub(&omegab, &omegab, &mub)
 	fmt.Printf("Recovered signature (n-of-m): %x\n", omegab.SerializeUncompressed())
+
+	return nil
 }

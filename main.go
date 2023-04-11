@@ -5,6 +5,5 @@ import (
 )
 
 func main() {
-	vess.Init()
 	vess.Test()
 }
